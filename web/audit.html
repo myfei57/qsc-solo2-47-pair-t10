@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>记录</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #0f1720; color: #dfe7ef; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    nav a { color: #7fc4ff; margin-right: 14px; text-decoration: none; }
+    input, button { background: #101a24; color: #dfe7ef; border: 1px solid #33414f; border-radius: 4px; padding: 5px 8px; }
+    button { background: #2b6cb0; border: 0; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 12px; }
+    th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #26333f; }
+    pre { background: #101a24; padding: 10px; border-radius: 6px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>审计与记录</h1>
+  <nav>
+    <a href="/">总览</a>
+    <a href="/operations.html">操作</a>
+    <a href="/curves.html">曲线</a>
+    <a href="/audit.html">记录</a>
+  </nav>
+  <div>
+    <label>主题 <input id="topic" placeholder="steam.valve.changed"></label>
+    <label>条数 <input id="limit" value="25" size="4"></label>
+    <button onclick="refresh()">查询</button>
+  </div>
+  <table id="records"><thead><tr><th>序号</th><th>主题</th><th>刻度</th><th>记号</th></tr></thead><tbody></tbody></table>
+  <h1 style="margin-top:24px">汇总</h1>
+  <pre id="summary"></pre>
+  <script>
+    const api = async (path) => (await fetch(path)).json();
+    async function refresh() {
+      const topic = document.getElementById("topic").value.trim();
+      const limit = document.getElementById("limit").value.trim();
+      const query = new URLSearchParams();
+      if (topic) query.set("topic", topic);
+      if (limit) query.set("limit", limit);
+      const data = await api("/api/audit?" + query.toString());
+      const body = document.querySelector("#records tbody");
+      body.innerHTML = "";
+      for (const record of data.records) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${record.seq}</td><td>${record.topic}</td>` +
+          `<td>${record.tick}</td><td>${JSON.stringify(record.payload)}</td>`;
+        body.appendChild(tr);
+      }
+      document.getElementById("summary").textContent =
+        JSON.stringify(await api("/api/audit/summary"), null, 2);
+    }
+    refresh();
+  </script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>总览</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #0f1720; color: #dfe7ef; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    nav a { color: #7fc4ff; margin-right: 14px; text-decoration: none; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 18px; }
+    .card { background: #18222e; border: 1px solid #26333f; border-radius: 8px; padding: 12px; }
+    .card h2 { font-size: 13px; margin: 0 0 8px; color: #9fb3c8; font-weight: 600; }
+    .lamp { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #d05a5a; margin-right: 6px; }
+    .lamp.on { background: #4cc38a; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #26333f; }
+    pre { background: #101a24; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>作业总览</h1>
+  <nav>
+    <a href="/">总览</a>
+    <a href="/operations.html">操作</a>
+    <a href="/curves.html">曲线</a>
+    <a href="/audit.html">记录</a>
+  </nav>
+  <div class="grid" id="lamps"></div>
+  <h1 style="margin-top:24px">告警与记录</h1>
+  <table id="topics"><thead><tr><th>主题</th><th>次数</th></tr></thead><tbody></tbody></table>
+  <h1 style="margin-top:24px">状态</h1>
+  <pre id="raw"></pre>
+  <script>
+    const api = async (path) => (await fetch(path)).json();
+    const rows = [
+      ["压榨脱水落盘", (s) => s.press.persisted],
+      ["蒸汽已排水", (s) => s.steam.drained],
+      ["蒸汽阀开启", (s) => s.steam.valve_open],
+      ["干燥曲线就绪", (s) => s.dry.generation > 0],
+      ["施胶辊抬起", (s) => s.glue.roll_lifted],
+      ["浓度报警", (s) => s.glue.alarm],
+      ["压区闭合", (s) => s.cal.nip_closed],
+      ["新轴投入", (s) => s.reel.spool_loaded],
+      ["损纸闩锁", (s) => s.broke.latched],
+      ["水份映射就绪", (s) => s.water.generation > 0]
+    ];
+    async function refresh() {
+      const state = await api("/api/state");
+      const lamps = document.getElementById("lamps");
+      lamps.innerHTML = "";
+      for (const [label, pick] of rows) {
+        const on = pick(state.subsystems) ? "on" : "";
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<h2><span class="lamp ${on}"></span>${label}</h2>` +
+          `<div>${on ? "已置位" : "未置位"}</div>`;
+        lamps.appendChild(card);
+      }
+      document.getElementById("raw").textContent = JSON.stringify(state, null, 2);
+      const counters = await api("/api/state/counters");
+      const body = document.querySelector("#topics tbody");
+      body.innerHTML = "";
+      for (const [topic, count] of Object.entries(counters)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${topic}</td><td>${count}</td>`;
+        body.appendChild(tr);
+      }
+    }
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

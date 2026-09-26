@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>曲线</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #0f1720; color: #dfe7ef; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    nav a { color: #7fc4ff; margin-right: 14px; text-decoration: none; }
+    section { background: #18222e; border: 1px solid #26333f; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    canvas { background: #101a24; border-radius: 6px; width: 100%; height: 220px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+    th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #26333f; }
+  </style>
+</head>
+<body>
+  <h1>曲线与横幅</h1>
+  <nav>
+    <a href="/">总览</a>
+    <a href="/operations.html">操作</a>
+    <a href="/curves.html">曲线</a>
+    <a href="/audit.html">记录</a>
+  </nav>
+  <section>
+    <h1>干燥曲线</h1>
+    <canvas id="dry" width="900" height="220"></canvas>
+    <pre id="dryMeta"></pre>
+  </section>
+  <section>
+    <h1>横幅水份曲线</h1>
+    <canvas id="profile" width="900" height="220"></canvas>
+    <table id="points"><thead><tr><th>位置</th><th>水份</th></tr></thead><tbody></tbody></table>
+  </section>
+  <script>
+    const api = async (path) => (await fetch(path)).json();
+    function line(canvas, points, color) {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!points.length) return;
+      const xs = points.map((p) => p[0]);
+      const ys = points.map((p) => p[1]);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const spanX = maxX - minX || 1;
+      const spanY = maxY - minY || 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach(([x, y], index) => {
+        const px = 40 + ((x - minX) / spanX) * (canvas.width - 80);
+        const py = canvas.height - 30 - ((y - minY) / spanY) * (canvas.height - 60);
+        if (index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+    }
+    async function refresh() {
+      const dry = await api("/api/dry/model?temperature=100");
+      const curve = dry.curve;
+      const points = [];
+      for (let t = 80; t <= 140; t += 5) {
+        points.push([t, curve.slope * t + curve.base]);
+      }
+      line(document.getElementById("dry"), points, "#4cc38a");
+      document.getElementById("dryMeta").textContent = JSON.stringify(curve);
+      const profile = await api("/api/water/profile");
+      line(document.getElementById("profile"), profile.profile.map((p) => [p.position, p.moisture]), "#7fc4ff");
+      const body = document.querySelector("#points tbody");
+      body.innerHTML = "";
+      for (const point of profile.profile) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${point.position}</td><td>${point.moisture}</td>`;
+        body.appendChild(tr);
+      }
+    }
+    refresh();
+    setInterval(refresh, 4000);
+  </script>
+</body>
+</html>

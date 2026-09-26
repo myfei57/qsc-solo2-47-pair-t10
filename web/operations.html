@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>操作</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #0f1720; color: #dfe7ef; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    nav a { color: #7fc4ff; margin-right: 14px; text-decoration: none; }
+    section { background: #18222e; border: 1px solid #26333f; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    button { background: #2b6cb0; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; margin: 3px; cursor: pointer; }
+    input { background: #101a24; color: #dfe7ef; border: 1px solid #33414f; border-radius: 4px; padding: 4px 6px; width: 110px; margin: 3px; }
+    pre { background: #101a24; padding: 10px; border-radius: 6px; min-height: 60px; font-size: 12px; }
+    label { color: #9fb3c8; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>操作台</h1>
+  <nav>
+    <a href="/">总览</a>
+    <a href="/operations.html">操作</a>
+    <a href="/curves.html">曲线</a>
+    <a href="/audit.html">记录</a>
+  </nav>
+  <section>
+    <h1>压榨与提速</h1>
+    <label>入口水份 <input id="inlet" value="60"></label>
+    <label>目标车速 <input id="target" value="900"></label>
+    <button onclick="post('/api/press/load', {load: 45})">压榨加压</button>
+    <button onclick="post('/api/press/dewater', {inlet_moisture: num('inlet'), width: 6})">脱水并记录</button>
+    <button onclick="post('/api/press/persist', {speed: num('target')})">脱水落盘</button>
+    <button onclick="post('/api/dry/speed', {speed: num('target')})">提速</button>
+  </section>
+  <section>
+    <h1>蒸汽与干燥</h1>
+    <button onclick="post('/api/steam/drain', {})">排水</button>
+    <button onclick="post('/api/steam/valve', {open: true})">开汽</button>
+    <button onclick="post('/api/dry/begin', {})">开始干燥流程</button>
+    <button onclick="post('/api/dry/drain', {})">排水完成</button>
+    <button onclick="post('/api/dry/admit', {})">投入蒸汽</button>
+    <button onclick="post('/api/dry/warm', {})">升温</button>
+    <button onclick="post('/api/dry/run', {})">干燥</button>
+    <label>目标汽温 <input id="heat" value="120"></label>
+    <button onclick="post('/api/dry/heat', {target: num('heat')})">升温到目标</button>
+  </section>
+  <section>
+    <h1>施胶与停机</h1>
+    <button onclick="post('/api/glue/roll', {lifted: true})">抬施胶辊</button>
+    <button onclick="post('/api/glue/stop', {})">停胶泵</button>
+    <button onclick="post('/api/glue/alarm', {on: true})">浓度报警</button>
+    <button onclick="post('/api/glue/alarm', {on: false})">清报警</button>
+  </section>
+  <section>
+    <h1>压光与卷取</h1>
+    <label>车速 <input id="calSpeed" value="900"></label>
+    <label>压区压力 <input id="nip" value="60"></label>
+    <label>新轴号 <input id="spool" value="S-2048"></label>
+    <button onclick="post('/api/cal/speed', {speed: num('calSpeed'), target: num('calSpeed')})">设定车速</button>
+    <button onclick="post('/api/cal/nip', {closed: true, pressure: num('nip')})">闭合压区</button>
+    <button onclick="post('/api/reel/change', {reason: 'full spool'})">触发换卷</button>
+    <button onclick="post('/api/reel/spool', {spool_id: document.getElementById('spool').value})">投入新轴</button>
+    <button onclick="post('/api/reel/retract', {})">退旧轴</button>
+    <button onclick="post('/api/reel/bite', {})">咬纸</button>
+  </section>
+  <section>
+    <h1>损纸处理</h1>
+    <label>损纸量 <input id="volume" value="12"></label>
+    <label>批次 <input id="batch" value="B-001"></label>
+    <button onclick="post('/api/broke/trip', {reason: 'web break'})">断纸</button>
+    <button onclick="post('/api/broke/process', {volume: num('volume'), batch_id: document.getElementById('batch').value})">处理损纸</button>
+    <button onclick="post('/api/broke/reset', {})">闩锁复位</button>
+    <button onclick="post('/api/broke/takeover', {})">接管</button>
+  </section>
+  <section>
+    <h1>输出</h1>
+    <pre id="out">就绪</pre>
+  </section>
+  <script>
+    const num = (id) => Number(document.getElementById(id).value);
+    const out = document.getElementById("out");
+    async function post(path, body) {
+      const response = await fetch(path, {method: "POST", body: JSON.stringify(body)});
+      out.textContent = path + " -> " + response.status + "\n" + JSON.stringify(await response.json(), null, 2);
+    }
+  </script>
+</body>
+</html>
