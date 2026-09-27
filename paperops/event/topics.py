@@ -6,6 +6,7 @@ TOPIC_PRESS_LOAD = "press.load.changed"
 TOPIC_DRY_PROCEDURE = "dry.procedure.changed"
 TOPIC_DRY_SPEED_SET = "dry.speed.set"
 TOPIC_DRY_CURVE_SET = "dry.curve.set"
+TOPIC_DRY_HANDOVER = "dry.handover.changed"
 
 TOPIC_STEAM_DRAINED = "steam.drained"
 TOPIC_STEAM_VALVE = "steam.valve.changed"
@@ -39,6 +40,7 @@ ALL_TOPICS: tuple[str, ...] = (
     TOPIC_DRY_PROCEDURE,
     TOPIC_DRY_SPEED_SET,
     TOPIC_DRY_CURVE_SET,
+    TOPIC_DRY_HANDOVER,
     TOPIC_STEAM_DRAINED,
     TOPIC_STEAM_VALVE,
     TOPIC_STEAM_BASELINE_SET,

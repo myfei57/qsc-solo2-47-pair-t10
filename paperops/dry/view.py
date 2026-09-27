@@ -13,6 +13,7 @@ class DryView:
     slope: float
     base: float
     generation: int
+    handover: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -23,4 +24,5 @@ class DryView:
             "slope": self.slope,
             "base": self.base,
             "generation": self.generation,
+            "handover": None if self.handover is None else dict(self.handover),
         }

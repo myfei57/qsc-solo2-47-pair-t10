@@ -3,6 +3,26 @@
 from typing import Mapping
 
 
+def blend_weight(taken: int, steps: int) -> float:
+    """Blend weight after taken of the declared handover steps."""
+    if steps < 1:
+        raise ValueError("a handover needs at least one step")
+    return min(1.0, max(0.0, float(taken) / float(steps)))
+
+
+def blend_curve(
+    old: Mapping[str, float],
+    new: Mapping[str, float],
+    weight: float,
+) -> dict[str, float]:
+    """Linear blend between the old and the new drying curve at a weight."""
+    w = float(weight)
+    return {
+        "slope": float(old["slope"]) + w * (float(new["slope"]) - float(old["slope"])),
+        "base": float(old["base"]) + w * (float(new["base"]) - float(old["base"])),
+    }
+
+
 def evaporation(curve: Mapping[str, float], temperature: float) -> float:
     """Water evaporated per unit time at a cylinder temperature."""
     return float(curve["slope"]) * float(temperature) + float(curve["base"])

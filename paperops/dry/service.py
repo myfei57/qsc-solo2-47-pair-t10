@@ -4,6 +4,23 @@ The drain has to close, then steam is admitted, then the cylinders warm, and onl
 then does the section dry. Speed may only be raised once the press has made its
 dewatering figure durable, and heat may only be applied once the admission valve is
 open, so the order between press, steam and dry is enforced on the way in.
+
+A grade change runs as a curve handover so the line does not stop: the old and the
+new curve overlap in a blending window while the committed curve stays single the
+whole time. The handover contract:
+
+- Authority: the committed curve remains the old one until the handover completes;
+  the section model follows the journaled blend of old and new at the current
+  weight. There is never more than one committed curve.
+- Completion: the blend weight advances in the declared number of steps, and the
+  step that reaches full weight commits the new curve under a fresh generation and
+  closes the handover in the same transaction.
+- Lock: while a handover is open the curve target is frozen — no curve
+  recalibration, no second handover and no reopening of the drying procedure; only
+  advancing, settling or aborting the open handover is allowed.
+- Interruption: every step is journaled, so a restart recovers the open handover at
+  its last committed weight. Settling commits the blend reached so far, aborting
+  keeps the old curve, and neither runs the drying procedure again.
 """
 
 from typing import Any, Protocol
@@ -23,6 +40,11 @@ CURVE_NAME = "dry.curve"
 DRY_NAME = "dry"
 STAGES = ("drain", "steam", "warm", "dry")
 TEMPERATURE_KEY = "dry.temperature"
+
+HANDOVER_OPEN = "open"
+HANDOVER_COMPLETE = "complete"
+HANDOVER_SETTLED = "settled"
+HANDOVER_ABORTED = "aborted"
 
 
 class SteamSource(Protocol):
@@ -57,6 +79,7 @@ class DryService:
         self._temperature = 0.0
         self._speed = 0.0
         self._curve: dict[str, float] = {"slope": 1.0, "base": 0.0, "generation": 0}
+        self._handover: dict[str, Any] | None = None
 
     # ----------------------------------------------------------------- reading
 
@@ -75,6 +98,36 @@ class DryService:
     def curve(self) -> dict[str, float]:
         return dict(self._curve)
 
+    def handover(self) -> dict[str, Any] | None:
+        """The latest curve handover record, or None when never begun."""
+        if self._handover is None:
+            return None
+        row = dict(self._handover)
+        row["weight"] = calc.blend_weight(int(row["taken"]), int(row["steps"]))
+        row["effective"] = self.effective_curve()
+        return row
+
+    def handover_open(self) -> bool:
+        return self._open_handover() is not None
+
+    def handover_weight(self) -> float:
+        """Blend weight of the open handover; zero when none is open."""
+        row = self._open_handover()
+        if row is None:
+            return 0.0
+        return calc.blend_weight(int(row["taken"]), int(row["steps"]))
+
+    def effective_curve(self) -> dict[str, float]:
+        """The curve the section model follows right now.
+
+        The committed curve outside a handover; the journaled blend of old and
+        new at the current weight while a handover is open.
+        """
+        row = self._open_handover()
+        if row is None:
+            return dict(self._curve)
+        return calc.blend_curve(row["old"], row["new"], self.handover_weight())
+
     def view(self) -> DryView:
         return DryView(
             procedure=self._procedure.state(),
@@ -84,12 +137,14 @@ class DryService:
             slope=self._curve["slope"],
             base=self._curve["base"],
             generation=int(self._curve["generation"]),
+            handover=self.handover(),
         )
 
     # ------------------------------------------------------------------ writes
 
     def begin(self) -> dict[str, Any]:
         """Open a fresh drying procedure at the drain stage."""
+        self._require_no_handover()
         self._procedure.reset()
         return self._record_procedure("dry-begin")
 
@@ -144,6 +199,7 @@ class DryService:
 
     def recalibrate_curve(self, slope: float, base: float, confirmation_id: str) -> dict[str, Any]:
         """Replace the drying curve under a confirmation and a new generation."""
+        self._require_no_handover()
         self._slope_band.require(slope, "drying curve slope")
         self._confirmations.redeem(confirmation_id, CURVE_NAME, DRY_NAME)
         generation = self._generations.advance(CURVE_NAME, "dry-curve-generation")
@@ -159,6 +215,110 @@ class DryService:
         self._curve = {"slope": float(slope), "base": float(base), "generation": generation}
         self._bus.publish(topics.TOPIC_DRY_CURVE_SET, generation)
         return dict(row)
+
+    def begin_handover(
+        self,
+        slope: float,
+        base: float,
+        steps: int,
+        confirmation_id: str,
+    ) -> dict[str, Any]:
+        """Open a curve handover toward the new grade curve.
+
+        The committed curve stays the old one; the section model starts following
+        the journaled blend at weight zero.
+        """
+        self._require_no_handover()
+        if int(steps) < 1:
+            raise ValueError("a handover needs at least one step")
+        self._slope_band.require(slope, "drying curve slope")
+        self._confirmations.redeem(confirmation_id, CURVE_NAME, DRY_NAME)
+        row = {
+            "status": HANDOVER_OPEN,
+            "old": dict(self._curve),
+            "new": {"slope": float(slope), "base": float(base)},
+            "steps": int(steps),
+            "taken": 0,
+            "tick": self._clock.tick,
+        }
+        with self._journal.transaction("dry-handover-begin") as batch:
+            self._journal.append(keys.DRY_HANDOVER, row, batch)
+        self._handover = row
+        self._bus.publish(topics.TOPIC_DRY_HANDOVER, HANDOVER_OPEN)
+        return self.handover()
+
+    def advance_handover(self) -> dict[str, Any]:
+        """Move the blend one declared step toward the new curve.
+
+        The step that reaches full weight commits the new curve under a fresh
+        generation and closes the handover in the same transaction.
+        """
+        row = self._require_open_handover()
+        taken = int(row["taken"]) + 1
+        tick = self._clock.tick
+        if taken < int(row["steps"]):
+            row = {**row, "taken": taken, "tick": tick}
+            with self._journal.transaction("dry-handover-advance") as batch:
+                self._journal.append(keys.DRY_HANDOVER, row, batch)
+            self._handover = row
+            self._bus.publish(topics.TOPIC_DRY_HANDOVER, self.handover_weight())
+            return self.handover()
+        generation = self._generations.advance(CURVE_NAME, "dry-curve-generation")
+        curve_row = {
+            "slope": float(row["new"]["slope"]),
+            "base": float(row["new"]["base"]),
+            "generation": generation,
+            "tick": tick,
+        }
+        done = {**row, "status": HANDOVER_COMPLETE, "taken": taken, "tick": tick}
+        with self._journal.transaction("dry-handover-complete") as batch:
+            self._journal.append(keys.DRY_CURVE, curve_row, batch, generation=generation)
+            self._journal.append(keys.DRY_HANDOVER, done, batch)
+        self._curve = {
+            "slope": curve_row["slope"],
+            "base": curve_row["base"],
+            "generation": generation,
+        }
+        self._handover = done
+        self._bus.publish(topics.TOPIC_DRY_CURVE_SET, generation)
+        self._bus.publish(topics.TOPIC_DRY_HANDOVER, HANDOVER_COMPLETE)
+        return self.handover()
+
+    def settle_handover(self) -> dict[str, Any]:
+        """Close an open handover early, committing the blend reached so far."""
+        row = self._require_open_handover()
+        blended = calc.blend_curve(row["old"], row["new"], self.handover_weight())
+        generation = self._generations.advance(CURVE_NAME, "dry-curve-generation")
+        tick = self._clock.tick
+        curve_row = {
+            "slope": blended["slope"],
+            "base": blended["base"],
+            "generation": generation,
+            "tick": tick,
+        }
+        done = {**row, "status": HANDOVER_SETTLED, "tick": tick}
+        with self._journal.transaction("dry-handover-settle") as batch:
+            self._journal.append(keys.DRY_CURVE, curve_row, batch, generation=generation)
+            self._journal.append(keys.DRY_HANDOVER, done, batch)
+        self._curve = {
+            "slope": curve_row["slope"],
+            "base": curve_row["base"],
+            "generation": generation,
+        }
+        self._handover = done
+        self._bus.publish(topics.TOPIC_DRY_CURVE_SET, generation)
+        self._bus.publish(topics.TOPIC_DRY_HANDOVER, HANDOVER_SETTLED)
+        return self.handover()
+
+    def abort_handover(self) -> dict[str, Any]:
+        """Close an open handover keeping the old curve in force."""
+        row = self._require_open_handover()
+        done = {**row, "status": HANDOVER_ABORTED, "tick": self._clock.tick}
+        with self._journal.transaction("dry-handover-abort") as batch:
+            self._journal.append(keys.DRY_HANDOVER, done, batch)
+        self._handover = done
+        self._bus.publish(topics.TOPIC_DRY_HANDOVER, HANDOVER_ABORTED)
+        return self.handover()
 
     def reload(self) -> DryView:
         """Restore the procedure, curve, heat and speed from the committed stream."""
@@ -180,6 +340,16 @@ class DryService:
                 "base": float(curve["base"]),
                 "generation": int(curve["generation"]),
             }
+        handover = self._journal.read(keys.DRY_HANDOVER)
+        if handover is not None:
+            self._handover = {
+                "status": str(handover["status"]),
+                "old": dict(handover["old"]),
+                "new": dict(handover["new"]),
+                "steps": int(handover["steps"]),
+                "taken": int(handover["taken"]),
+                "tick": int(handover["tick"]),
+            }
         speed = self._journal.read(keys.DRY_SPEED)
         if speed is not None:
             self._speed = float(speed["speed"])
@@ -192,7 +362,7 @@ class DryService:
     # -------------------------------------------------------------- arithmetic
 
     def evaporation(self, temperature: float) -> float:
-        return calc.evaporation(self._curve, temperature)
+        return calc.evaporation(self.effective_curve(), temperature)
 
     def heat_duty(self, steam_flow: float) -> float:
         return calc.heat_duty(steam_flow)
@@ -211,6 +381,21 @@ class DryService:
         return calc.steady(self._temperature, target)
 
     # ---------------------------------------------------------------- internals
+
+    def _open_handover(self) -> dict[str, Any] | None:
+        if self._handover is None or self._handover["status"] != HANDOVER_OPEN:
+            return None
+        return self._handover
+
+    def _require_open_handover(self) -> dict[str, Any]:
+        row = self._open_handover()
+        if row is None:
+            raise PreGateError("dry: no curve handover is open")
+        return row
+
+    def _require_no_handover(self) -> None:
+        if self._open_handover() is not None:
+            raise PreGateError("dry: a curve handover is still open")
 
     def _record_procedure(self, prefix: str) -> dict[str, Any]:
         state = dict(self._procedure.state())

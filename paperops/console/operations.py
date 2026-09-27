@@ -131,6 +131,29 @@ def dry_curve(console: Any, request: Request) -> Response:
     return json_response(row)
 
 
+def dry_handover_begin(console: Any, request: Request) -> Response:
+    body = request.body()
+    row = console.services.dry.begin_handover(
+        body["slope"],
+        body["base"],
+        int(body.get("steps", 4)),
+        body["confirmation_id"],
+    )
+    return json_response(row)
+
+
+def dry_handover_advance(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.advance_handover())
+
+
+def dry_handover_settle(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.settle_handover())
+
+
+def dry_handover_abort(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.abort_handover())
+
+
 def steam_drain(console: Any, request: Request) -> Response:
     return json_response({"drained": True, "tick": console.services.steam.drain()})
 
