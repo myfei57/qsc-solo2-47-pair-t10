@@ -7,6 +7,7 @@ PRESS_GAIN = "press/gain"
 DRY_PROCEDURE = "dry/procedure"
 DRY_SPEED = "dry/speed"
 DRY_CURVE = "dry/curve"
+DRY_HANDOVER = "dry/handover"
 
 STEAM_DRAIN = "steam/drain"
 STEAM_VALVE = "steam/valve"

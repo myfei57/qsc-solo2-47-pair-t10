@@ -75,3 +75,11 @@ class OutOfRangeError(ContractError):
 
 class UnknownSensorError(ContractError):
     """Raised when a moisture sensor is addressed before it is mapped."""
+
+
+class HandoverInProgressError(ContractError):
+    """Raised when the curve target moves while a curve handover is still open."""
+
+
+class NoHandoverError(ContractError):
+    """Raised when a handover operation is requested but no handover is open."""

@@ -9,9 +9,11 @@ from ..errors import (
     ContractError,
     DuplicateBatchError,
     DuplicateStageError,
+    HandoverInProgressError,
     LatchClearError,
     LatchSetError,
     MaintenanceError,
+    NoHandoverError,
     OutOfRangeError,
     OutOfSequenceError,
     PreGateError,
@@ -39,6 +41,7 @@ CONFLICT = (
     StaleArtifactError,
     RollbackError,
     CommitOrderError,
+    HandoverInProgressError,
 )
 MALFORMED = (OutOfRangeError, UnknownStageError, ConfirmationMismatchError)
 MISSING = (
@@ -47,6 +50,7 @@ MISSING = (
     UnknownBatchError,
     BatchNotPendingError,
     UnknownSensorError,
+    NoHandoverError,
 )
 
 ROUTES: tuple[tuple[str, str, Handler], ...] = (
@@ -93,6 +97,13 @@ ROUTES: tuple[tuple[str, str, Handler], ...] = (
     ("POST", "/api/dry/heat", operations.dry_heat),
     ("POST", "/api/dry/speed", operations.dry_speed),
     ("POST", "/api/dry/curve", operations.dry_curve),
+    ("GET", "/api/dry/handover", handlers.dry_handover),
+    ("POST", "/api/dry/handover/begin", operations.dry_handover_begin),
+    ("POST", "/api/dry/handover/tick", operations.dry_handover_tick),
+    ("POST", "/api/dry/handover/suspend", operations.dry_handover_suspend),
+    ("POST", "/api/dry/handover/resume", operations.dry_handover_resume),
+    ("POST", "/api/dry/handover/complete", operations.dry_handover_complete),
+    ("POST", "/api/dry/handover/abort", operations.dry_handover_abort),
     ("GET", "/api/steam/state", handlers.steam_state),
     ("GET", "/api/steam/pressure", handlers.steam_pressure),
     ("GET", "/api/steam/model", handlers.steam_model),

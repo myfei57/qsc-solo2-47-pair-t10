@@ -131,6 +131,44 @@ def dry_curve(console: Any, request: Request) -> Response:
     return json_response(row)
 
 
+def dry_handover_begin(console: Any, request: Request) -> Response:
+    body = request.body()
+    return json_response(
+        console.services.dry.begin_handover(
+            body["slope"],
+            body["base"],
+            body["confirmation_id"],
+            blend_ticks=int(body.get("blend_ticks", 5)),
+            confirm_ticks=int(body.get("confirm_ticks", 3)),
+            tolerance=float(body.get("tolerance", 0.5)),
+        )
+    )
+
+
+def dry_handover_tick(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.tick_handover())
+
+
+def dry_handover_suspend(console: Any, request: Request) -> Response:
+    return json_response(
+        console.services.dry.suspend_handover(request.body().get("reason", "operator"))
+    )
+
+
+def dry_handover_resume(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.resume_handover())
+
+
+def dry_handover_complete(console: Any, request: Request) -> Response:
+    return json_response(console.services.dry.complete_handover())
+
+
+def dry_handover_abort(console: Any, request: Request) -> Response:
+    return json_response(
+        console.services.dry.abort_handover(request.body().get("reason", "operator abort"))
+    )
+
+
 def steam_drain(console: Any, request: Request) -> Response:
     return json_response({"drained": True, "tick": console.services.steam.drain()})
 

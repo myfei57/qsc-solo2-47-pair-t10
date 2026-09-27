@@ -220,6 +220,10 @@ def dry_procedure(console: Any, request: Request) -> Response:
     return json_response(console.services.dry.procedure())
 
 
+def dry_handover(console: Any, request: Request) -> Response:
+    return json_response({"handover": console.services.dry.handover()})
+
+
 def dry_model(console: Any, request: Request) -> Response:
     dry = console.services.dry
     temperature = request.number("temperature", dry.temperature())
